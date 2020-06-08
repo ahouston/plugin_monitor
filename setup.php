@@ -108,13 +108,11 @@ function monitor_device_table_bottom() {
 	});
 
 	applyFilter = function() {
-		strURL  = 'host.php';
-		strURL += '?host_status=' + $('#host_status').val();
+		strURL  = 'host.php?host_status=' + $('#host_status').val();
 		strURL += '&host_template_id=' + $('#host_template_id').val();
 		strURL += '&site_id=' + $('#site_id').val();
 		strURL += '&criticality=' + $('#criticality').val();
 		strURL += '&poller_id=' + $('#poller_id').val();
-		strURL += '&location=' + $('#location').val();
 		strURL += '&rows=' + $('#rows').val();
 		strURL += '&filter=' + $('#filter').val();
 		strURL += '&page=' + $('#page').val();
@@ -221,17 +219,9 @@ function monitor_device_action_execute($action) {
 		if ($action == 'monitor_enable' || $action == 'monitor_disable') {
 			for ($i = 0; ($i < count($selected_items)); $i++) {
 				if ($action == 'monitor_enable') {
-					db_execute_prepared('UPDATE host
-						SET monitor = "on"
-						WHERE deleted = ""
-						AND id = ?',
-						array($selected_items[$i]));
+					db_execute("UPDATE host SET monitor='on' WHERE id='" . $selected_items[$i] . "'");
 				} else if ($action == 'monitor_disable') {
-					db_execute_prepared('UPDATE host
-						SET monitor = ""
-						WHERE deleted = ""
-						AND id = ?',
-						array($selected_items[$i]));
+					db_execute("UPDATE host SET monitor='' WHERE id='" . $selected_items[$i] . "'");
 				}
 			}
 		} else {
@@ -240,39 +230,17 @@ function monitor_device_action_execute($action) {
 				while (list($field_name, $field_array) = each($fields_host_edit)) {
 					if (isset_request_var("t_$field_name")) {
 						if ($field_name == 'monitor_alert_baseline') {
-							$cur_time = db_fetch_cell_prepared('SELECT cur_time
-								FROM host
-								WHERE deleted = ""
-								AND id = ?',
-								array($selected_items[$i]));
-
+							$cur_time = db_fetch_cell_prepared('SELECT cur_time FROM host WHERE id = ?', array($selected_items[$i]));
 							if ($cur_time > 0) {
-								db_execute_prepared('UPDATE host
-									SET monitor_alert = CEIL(avg_time*?)
-									WHERE deleted = ""
-									AND id = ?',
-									array(get_nfilter_request_var($field_name), $selected_items[$i]));
+								db_execute_prepared("UPDATE host SET monitor_alert = CEIL(avg_time*?) WHERE id = ?", array(get_nfilter_request_var($field_name), $selected_items[$i]));
 							}
 						} elseif ($field_name == 'monitor_warn_baseline') {
-							$cur_time = db_fetch_cell_prepared('SELECT cur_time
-								FROM host
-								WHERE deleted = ""
-								AND id = ?',
-								array($selected_items[$i]));
-
+							$cur_time = db_fetch_cell_prepared('SELECT cur_time FROM host WHERE id = ?', array($selected_items[$i]));
 							if ($cur_time > 0) {
-								db_execute_prepared('UPDATE host
-									SET monitor_warn = CEIL(avg_time*?)
-									WHERE deleted = ""
-									AND id = ?',
-									array(get_nfilter_request_var($field_name), $selected_items[$i]));
+								db_execute_prepared("UPDATE host SET monitor_warn = CEIL(avg_time*?) WHERE id = ?", array(get_nfilter_request_var($field_name), $selected_items[$i]));
 							}
 						} else {
-							db_execute_prepared("UPDATE host
-								SET $field_name = ?
-								WHERE deleted=''
-								AND id = ?",
-								array(get_nfilter_request_var($field_name), $selected_items[$i]));
+							db_execute_prepared("UPDATE host SET $field_name = ? WHERE id = ?", array(get_nfilter_request_var($field_name), $selected_items[$i]));
 						}
 					}
 				}
@@ -404,10 +372,6 @@ function monitor_config_settings() {
 		'186' => __('%d Months', 6, 'monitor'),
 		'365' => __('%d Year', 1, 'monitor')
 	);
-
-	if (function_exists('auth_augment_roles')) {
-		auth_augment_roles(__('Normal User'), array('monitor.php'));
-	}
 
 	$tabs_graphs += array('monitor' => __('Monitor Settings', 'monitor'));
 
@@ -752,20 +716,22 @@ function monitor_config_form () {
 
 function monitor_get_default($host_id) {
 	$monitor_new_device = '';
-
 	if ($host_id <= 0) {
-		$monitor_new_device = read_config_option('monitor_new_enabled');
+		$monitor_new_device = db_fetch_cell('SELECT value
+						     FROM settings
+						     WHERE name = \'monitor_new_enabled\'');
 	}
-
+	//file_put_contents('/tmp/monitor.log',"monitor_get_default($host_id) retured ".var_export($monitor_new_device,true)."\n",FILE_APPEND);
 	return $monitor_new_device;
 }
 
 function monitor_api_device_save($save) {
 	$monitor_default = monitor_get_default($save['id']);
-
 	if (isset_request_var('monitor')) {
+		//file_put_contents('/tmp/monitor.log',"monitor_api_device_save_var(".$save['id'].") retured ".var_export($monitor_default,true)."\n",FILE_APPEND);
 		$save['monitor'] = form_input_validate(get_nfilter_request_var('monitor'), 'monitor', $monitor_default, true, 3);
 	} else {
+		//file_put_contents('/tmp/monitor.log',"monitor_api_device_save(".$save['id'].") retured ".var_export($monitor_default,true)."\n",FILE_APPEND);
 		$save['monitor'] = form_input_validate($monitor_default, 'monitor', '', true, 3);
 	}
 
@@ -819,7 +785,7 @@ function monitor_api_device_save($save) {
 }
 
 function monitor_draw_navigation_text ($nav) {
-   $nav['monitor.php:'] = array('title' => __('Monitoring', 'monitor'), 'mapping' => '', 'url' => 'monitor.php', 'level' => '0');
+   $nav['monitor.php:'] = array('title' => __('Monitoring', 'monitor'), 'mapping' => '', 'url' => 'monitor.php', 'level' => '1');
 
    return $nav;
 }
@@ -876,11 +842,11 @@ function monitor_setup_table() {
 			COMMENT='Stores predefined dashboard information for a user or users'");
 	}
 
-	api_plugin_db_add_column('monitor', 'host', array('name' => 'monitor', 'type' => 'char(3)', 'NULL' => false, 'default' => 'on', 'after' => 'disabled'));
-	api_plugin_db_add_column('monitor', 'host', array('name' => 'monitor_text', 'type' => 'varchar(1024)', 'default' => '', 'NULL' => false, 'after' => 'monitor'));
-	api_plugin_db_add_column('monitor', 'host', array('name' => 'monitor_criticality', 'type' => 'tinyint', 'unsigned' => true, 'NULL' => false, 'default' => '0', 'after' => 'monitor_text'));
-	api_plugin_db_add_column('monitor', 'host', array('name' => 'monitor_warn', 'type' => 'double', 'NULL' => false, 'default' => '0', 'after' => 'monitor_criticality'));
-	api_plugin_db_add_column('monitor', 'host', array('name' => 'monitor_alert', 'type' => 'double', 'NULL' => false, 'default' => '0', 'after' => 'monitor_warn'));
+	api_plugin_db_add_column ('monitor', 'host', array('name' => 'monitor', 'type' => 'char(3)', 'NULL' => false, 'default' => 'on', 'after' => 'disabled'));
+	api_plugin_db_add_column ('monitor', 'host', array('name' => 'monitor_text', 'type' => 'varchar(1024)', 'default' => '', 'NULL' => false, 'after' => 'monitor'));
+	api_plugin_db_add_column ('monitor', 'host', array('name' => 'monitor_criticality', 'type' => 'tinyint', 'unsigned' => true, 'NULL' => false, 'default' => '0', 'after' => 'monitor_text'));
+	api_plugin_db_add_column ('monitor', 'host', array('name' => 'monitor_warn', 'type' => 'double', 'NULL' => false, 'default' => '0', 'after' => 'monitor_criticality'));
+	api_plugin_db_add_column ('monitor', 'host', array('name' => 'monitor_alert', 'type' => 'double', 'NULL' => false, 'default' => '0', 'after' => 'monitor_warn'));
 }
 
 function monitor_poller_bottom() {
@@ -898,4 +864,3 @@ function monitor_poller_bottom() {
 
     exec_background($command_string, $extra_args);
 }
-
